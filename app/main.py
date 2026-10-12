@@ -4,7 +4,7 @@
 Документация:            http://127.0.0.1:8000/docs (в prod выключена)
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Literal
 
@@ -32,7 +32,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     setup_logging(settings)
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
         log.info("app_started", app_name=settings.app_name)
         yield
         log.info("app_stopped")
