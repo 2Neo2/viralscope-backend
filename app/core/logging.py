@@ -72,6 +72,14 @@ def mask_secrets(_: WrappedLogger, __: str, event_dict: EventDict) -> EventDict:
     return event_dict
 
 
+class DropDuplicateServerErrors(logging.Filter):
+    """После ответа 500 Starlette пробрасывает исключение дальше, и uvicorn логирует его второй раз.
+    Ошибку уже записал наш обработчик (событие unhandled_error в app/core/errors.py) — дубль убираем."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not record.getMessage().startswith("Exception in ASGI application")
+
+
 def add_app_info(settings: Settings) -> Processor:
     """Добавляет к каждой записи service, env и version — по ним фильтруем логи в Grafana."""
 
@@ -134,6 +142,9 @@ def setup_logging(settings: Settings) -> None:
         uvicorn_logger = logging.getLogger(name)
         uvicorn_logger.handlers.clear()
         uvicorn_logger.propagate = True
+    error_logger = logging.getLogger("uvicorn.error")
+    if not any(isinstance(f, DropDuplicateServerErrors) for f in error_logger.filters):
+        error_logger.addFilter(DropDuplicateServerErrors())
 
     # Каждый запрос логирует наша middleware (событие request_finished), access-лог uvicorn — дубль.
     access_logger = logging.getLogger("uvicorn.access")
