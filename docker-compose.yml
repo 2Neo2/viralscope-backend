@@ -1,0 +1,58 @@
+# Весь стек для разработки одной командой:
+#   cp .env.example .env      (один раз)
+#   docker compose up --build
+# API: http://localhost:8000/docs
+#
+# Значения ${...} берутся из файла .env (docker compose читает его сам), после :- — значение по умолчанию.
+# Если порт на компьютере занят другим проектом, поменяйте API_PORT / POSTGRES_PORT / REDIS_PORT в .env.
+
+services:
+  api:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Внутри Docker сервисы видят друг друга по имени: postgres и redis, а не localhost
+      VS_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-viralscope}:${POSTGRES_PASSWORD:-viralscope}@postgres:5432/${POSTGRES_DB:-viralscope}
+      VS_REDIS_URL: redis://redis:6379/0
+      VS_LOG_JSON: "true"  # в контейнере логи всегда в JSON — их соберёт Grafana Alloy (шаг 11)
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-viralscope}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-viralscope}
+      POSTGRES_DB: ${POSTGRES_DB:-viralscope}
+    volumes:
+      - pgdata:/var/lib/postgresql/data  # данные переживают docker compose down
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"  # только с вашего компьютера: для DBeaver/psql и тестов
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pgdata:

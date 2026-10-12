@@ -1,0 +1,13 @@
+# В образ попадает только то, что нужно для запуска: pyproject.toml и папка app.
+.git
+.github
+.venv
+.env
+*.egg-info
+__pycache__
+.pytest_cache
+.ruff_cache
+.DS_Store
+tests
+observability
+README.md
