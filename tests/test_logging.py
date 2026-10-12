@@ -80,6 +80,16 @@ def test_stdlib_loggers_use_same_format(capsys):
     assert record["service"] == "api" and record["request_id"] == "r1"
 
 
+def test_uvicorn_color_message_is_dropped(capsys):
+    setup_json()
+    colored = "Started server process [\x1b[36m%d\x1b[0m]"
+    uvicorn_logger = logging.getLogger("uvicorn.error")
+    uvicorn_logger.info("Started server process [%d]", 42, extra={"color_message": colored})
+    record = json_lines(capsys.readouterr().out)[-1]
+    assert record["event"] == "Started server process [42]"
+    assert "color_message" not in record
+
+
 def test_uvicorn_access_log_is_disabled(capsys):
     setup_json()
     logging.getLogger("uvicorn.access").info('127.0.0.1 - "GET /health HTTP/1.1" 200')

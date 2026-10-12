@@ -9,7 +9,8 @@ def make_settings(**overrides) -> Settings:
     return Settings(_env_file=None, **overrides)
 
 
-def test_defaults_for_development():
+def test_defaults_for_development(monkeypatch):
+    monkeypatch.delenv("VS_ENV", raising=False)  # conftest.py задаёт VS_ENV=test для всех тестов
     settings = make_settings()
     assert settings.env == "dev"
     assert settings.is_dev and not settings.is_prod
