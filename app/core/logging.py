@@ -44,7 +44,7 @@ SENSITIVE_KEYS = frozenset(
     }
 )
 EMAIL_RE = re.compile(r"([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*(@[A-Za-z0-9.-]+\.[A-Za-z]{2,})")
-NOISY_LOGGERS = ("httpx", "httpcore", "asyncio", "multipart")
+NOISY_LOGGERS = ("httpx", "httpx2", "httpcore", "asyncio", "multipart")
 
 
 def mask_email(text: str) -> str:
@@ -69,6 +69,12 @@ def mask_secrets(_: WrappedLogger, __: str, event_dict: EventDict) -> EventDict:
         if key.startswith("_"):  # служебные поля structlog (_record, _from_structlog) не трогаем
             continue
         event_dict[key] = _mask(value, key)
+    return event_dict
+
+
+def drop_color_message(_: WrappedLogger, __: str, event_dict: EventDict) -> EventDict:
+    """uvicorn кладёт в записи color_message — тот же текст с кодами цветов терминала. В логах это мусор."""
+    event_dict.pop("color_message", None)
     return event_dict
 
 
@@ -120,13 +126,14 @@ def setup_logging(settings: Settings) -> None:
         ],
         logger_factory=structlog.stdlib.LoggerFactory(),
         wrapper_class=structlog.stdlib.BoundLogger,
-        # В тестах не кэшируем логгеры, иначе structlog.testing.capture_logs их не перехватит.
-        cache_logger_on_first_use=settings.env != "test",
+        # Не кэшируем: закэшированный логгер «запоминает» настройки навсегда и не видит перенастройку
+        # (например, structlog.testing.capture_logs в тестах). Разница в скорости для нас незаметна.
+        cache_logger_on_first_use=False,
     )
 
     # Логи стандартного logging (uvicorn, библиотеки) проходят через тот же формат.
     formatter = structlog.stdlib.ProcessorFormatter(
-        foreign_pre_chain=[*shared, structlog.stdlib.ExtraAdder()],
+        foreign_pre_chain=[*shared, structlog.stdlib.ExtraAdder(), drop_color_message],
         processors=[structlog.stdlib.ProcessorFormatter.remove_processors_meta, *render],
     )
     handler = logging.StreamHandler(sys.stdout)
