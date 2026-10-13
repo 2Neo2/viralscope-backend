@@ -1,10 +1,14 @@
 # Весь стек для разработки одной командой:
-#   cp .env.example .env      (один раз)
+#   cp .env.example .env      (один раз, затем задайте GRAFANA_ADMIN_PASSWORD)
 #   docker compose up --build
-# API: http://localhost:8000/docs
+# API:     http://localhost:8000/docs
+# Grafana: http://localhost:3001  (логин admin, пароль — GRAFANA_ADMIN_PASSWORD из .env)
 #
 # Значения ${...} берутся из файла .env (docker compose читает его сам), после :- — значение по умолчанию.
-# Если порт на компьютере занят другим проектом, поменяйте API_PORT / POSTGRES_PORT / REDIS_PORT в .env.
+# Если порт на компьютере занят другим проектом, поменяйте *_PORT в .env.
+
+# Постоянное имя проекта (а не имя папки): по нему Alloy находит наши контейнеры.
+name: viralscope
 
 services:
   api:
@@ -54,5 +58,54 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # ---------- Логи: Loki хранит, Alloy собирает, Grafana показывает ----------
+
+  loki:
+    image: grafana/loki:3.7.8
+    command: -config.file=/etc/loki/local-config.yaml  # встроенный конфиг: хранение на диске, один процесс
+    volumes:
+      - loki-data:/loki
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:v1.20.1
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # только чтение: видеть контейнеры и их логи
+      - alloy-data:/var/lib/alloy/data  # где Alloy запомнил, докуда прочитал логи
+    ports:
+      - "127.0.0.1:${ALLOY_PORT:-12345}:12345"  # интерфейс Alloy: схема пайплайна и ошибки
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.2.3
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?задайте GRAFANA_ADMIN_PASSWORD в .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"  # 3000 оставляем сайту на Next.js
+    depends_on:
+      - loki
+    restart: unless-stopped
+
 volumes:
   pgdata:
+  loki-data:
+  alloy-data:
+  grafana-data:

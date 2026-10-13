@@ -1,0 +1,13 @@
+# Grafana сама подключает Loki при старте — ничего не нужно настраивать в интерфейсе.
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    uid: loki  # по этому uid на него ссылаются дашборды
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: true
+    editable: false
+    jsonData:
+      maxLines: 1000

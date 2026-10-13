@@ -1,0 +1,78 @@
+// Grafana Alloy: собирает логи контейнеров проекта и отправляет их в Loki.
+// Интерфейс Alloy (схема пайплайна, ошибки): http://localhost:12345
+//
+// Метки (labels) в Loki — только то, где мало разных значений: service, container, env, level.
+// request_id, user_id, path и остальное остаются полями внутри JSON — иначе Loki начнёт тормозить.
+// Искать по ним так: {service="api"} | json | request_id="..."
+
+// 1. Найти контейнеры. Только проекта viralscope — на компьютере могут быть контейнеры других проектов.
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+
+  filter {
+    name   = "label"
+    values = ["com.docker.compose.project=viralscope"]
+  }
+}
+
+// 2. Правила меток: имя сервиса из docker compose → метка service.
+discovery.relabel "containers" {
+  targets = []
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  // Логи самого стека наблюдаемости не собираем — они не нужны и создают лишний шум.
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    regex         = "loki|alloy|grafana"
+    action        = "drop"
+  }
+}
+
+// 3. Читать логи контейнеров.
+loki.source.docker "containers" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.containers.targets
+  relabel_rules = discovery.relabel.containers.rules
+  forward_to    = [loki.process.app.receiver]
+}
+
+// 4. Логи наших Python-сервисов — JSON: достаём level и env и делаем их метками.
+//    Логи postgres и redis не JSON — проходят как есть, только с меткой service.
+loki.process "app" {
+  stage.match {
+    selector = "{service=~\"api|worker|beat\"}"
+
+    stage.json {
+      expressions = {
+        level = "level",
+        env   = "env",
+      }
+    }
+
+    stage.labels {
+      values = {
+        level = "",
+        env   = "",
+      }
+    }
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+// 5. Отправить в Loki.
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
