@@ -306,7 +306,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "Запросы в минуту",
-      "description": "Нагрузка на API. Всплески — рассылки, открытие потока, боты.",
+      "description": "Сколько запросов пришло за каждую минуту. Всплески — рассылки, открытие потока, боты.",
       "datasource": {
         "type": "loki",
         "uid": "loki"
@@ -317,6 +317,7 @@
         "x": 0,
         "y": 4
       },
+      "interval": "1m",
       "targets": [
         {
           "refId": "A",
@@ -349,12 +350,11 @@
             "fixedColor": "blue"
           },
           "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 15,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
             "showPoints": "never",
-            "spanNulls": true
+            "spanNulls": false
           }
         },
         "overrides": []
@@ -375,6 +375,7 @@
         "x": 12,
         "y": 4
       },
+      "interval": "1m",
       "targets": [
         {
           "refId": "A",
