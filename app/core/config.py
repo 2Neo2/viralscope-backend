@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     db_pool_size: int = 5  # постоянных соединений в пуле
     db_max_overflow: int = 10  # дополнительных соединений при пиковой нагрузке
     db_pool_timeout: int = 30  # секунд ждать свободное соединение, затем ошибка
+    db_health_timeout: float = 2.0  # секунд на проверку базы в /health/ready
 
     # Redis (используется с этапа 8)
     redis_url: str = "redis://localhost:6379/0"

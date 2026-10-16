@@ -1,4 +1,8 @@
+import asyncio
+import time
+
 from fastapi.testclient import TestClient
+from structlog.testing import capture_logs
 
 from app.main import create_app
 from tests.conftest import make_settings
@@ -62,3 +66,66 @@ def test_cors_preflight_gets_request_id(client):
     )
     assert response.status_code == 200
     assert response.headers["X-Request-ID"]
+
+
+class FakeConnection:
+    def __init__(self, delay: float = 0) -> None:
+        self.delay = delay
+
+    async def __aenter__(self) -> "FakeConnection":
+        await asyncio.sleep(self.delay)
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+    async def execute(self, statement: object) -> None:
+        return None
+
+
+class FakeEngine:
+    """Вместо базы: тест проверяет логику /health/ready, а не PostgreSQL."""
+
+    def __init__(self, delay: float = 0) -> None:
+        self.delay = delay
+
+    def connect(self) -> FakeConnection:
+        return FakeConnection(self.delay)
+
+
+def test_ready_ok_when_database_answers(app):
+    app.state.engine = FakeEngine()
+    response = TestClient(app).get("/health/ready")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "checks": {"database": "ok"}}
+
+
+def test_ready_503_when_database_is_down():
+    # Порт 1 никто не слушает: соединение сразу отклоняется, как при остановленной базе
+    app = create_app(make_settings(database_url="postgresql+asyncpg://u:secret@127.0.0.1:1/vs"))
+    with capture_logs() as logs:
+        response = TestClient(app).get("/health/ready")
+    assert response.status_code == 503
+    assert response.json() == {"status": "unavailable", "checks": {"database": "error"}}
+    assert response.headers["X-Request-ID"]
+    failed = next(entry for entry in logs if entry["event"] == "readiness_check_failed")
+    assert failed["log_level"] == "warning"
+    assert failed["check"] == "database"
+    assert "secret" not in str(logs)
+
+
+def test_ready_503_when_database_hangs():
+    app = create_app(make_settings(db_health_timeout=0.05))
+    app.state.engine = FakeEngine(delay=5)
+    started = time.perf_counter()
+    with capture_logs() as logs:
+        response = TestClient(app).get("/health/ready")
+    assert response.status_code == 503
+    assert time.perf_counter() - started < 1
+    failed = next(entry for entry in logs if entry["event"] == "readiness_check_failed")
+    assert failed["error_type"] == "TimeoutError"
+
+
+def test_ready_documented_with_503(client):
+    responses = client.get("/openapi.json").json()["paths"]["/health/ready"]["get"]["responses"]
+    assert {"200", "503"} <= responses.keys()

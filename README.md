@@ -28,7 +28,8 @@ make up      # весь стек в Docker
 | Что | Адрес |
 |---|---|
 | Документация API | http://localhost:8000/docs |
-| Проверка API | http://localhost:8000/health |
+| Проверка API | http://localhost:8000/health — процесс жив |
+| Готовность API | http://localhost:8000/health/ready — база доступна, иначе 503 |
 | Grafana (дашборд API) | http://localhost:3001/d/api-overview — логин `admin`, пароль `GRAFANA_ADMIN_PASSWORD` из `.env` |
 | Интерфейс Alloy | http://localhost:12345 |
 

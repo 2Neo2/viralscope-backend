@@ -28,7 +28,7 @@ REQUEST_ID_HEADER = "X-Request-ID"
 # Чужой request_id принимаем, только если он короткий и без спецсимволов (иначе через него портят логи)
 VALID_REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 # Служебные адреса, которые дёргают каждые несколько секунд (healthcheck Docker): успешные — только в debug
-QUIET_PATHS = frozenset({"/health"})
+QUIET_PATHS = frozenset({"/health", "/health/ready"})
 
 
 def resolve_request_id(scope: Scope) -> str:

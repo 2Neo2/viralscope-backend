@@ -6,25 +6,18 @@
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Literal
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 
 from app.core.config import Settings, get_settings
 from app.core.db import create_engine, create_sessionmaker
 from app.core.errors import register_error_handlers
+from app.core.health import router as health_router
 from app.core.logging import get_logger, setup_logging
 from app.core.middleware import REQUEST_ID_HEADER, RequestContextMiddleware
 
 log = get_logger(__name__)
-
-
-class HealthOut(BaseModel):
-    status: Literal["ok"]
-    env: str
-    version: str
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -70,9 +63,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     register_error_handlers(app)
 
-    @app.get("/health", response_model=HealthOut, tags=["system"], summary="Проверка, что сервис жив")
-    async def health() -> HealthOut:
-        return HealthOut(status="ok", env=settings.env, version=settings.version)
+    app.include_router(health_router)
 
     return app
 
