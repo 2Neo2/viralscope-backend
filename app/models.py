@@ -7,5 +7,7 @@ Alembic видит только те таблицы, чьи модели имп�
 """
 
 from app.core.db import Base
+from app.modules.niches.models import Niche, NicheQuery, UserNiche
+from app.modules.users.models import User
 
-__all__ = ["Base"]
+__all__ = ["Base", "Niche", "NicheQuery", "User", "UserNiche"]
