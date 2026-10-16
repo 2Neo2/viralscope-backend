@@ -36,8 +36,14 @@ class Settings(BaseSettings):
     # Сайт, которому разрешено ходить в API из браузера
     cors_origins: list[str] = ["http://localhost:3000"]
 
-    # Хранилища (используются начиная с этапов 2 и 8)
+    # База данных
     database_url: str = "postgresql+asyncpg://viralscope:viralscope@localhost:5432/viralscope"
+    db_echo: bool = False  # печатать каждый SQL-запрос — только для отладки
+    db_pool_size: int = 5  # постоянных соединений в пуле
+    db_max_overflow: int = 10  # дополнительных соединений при пиковой нагрузке
+    db_pool_timeout: int = 30  # секунд ждать свободное соединение, затем ошибка
+
+    # Redis (используется с этапа 8)
     redis_url: str = "redis://localhost:6379/0"
 
     @field_validator("log_level", mode="before")

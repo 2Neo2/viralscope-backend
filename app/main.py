@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.core.config import Settings, get_settings
+from app.core.db import create_engine, create_sessionmaker
 from app.core.errors import register_error_handlers
 from app.core.logging import get_logger, setup_logging
 from app.core.middleware import REQUEST_ID_HEADER, RequestContextMiddleware
@@ -31,10 +32,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     setup_logging(settings)
 
+    engine = create_engine(settings)
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
-        log.info("app_started", app_name=settings.app_name)
+        # В логе адрес базы без пароля: host, порт, имя базы
+        db_url = engine.url.render_as_string(hide_password=True)
+        log.info("app_started", app_name=settings.app_name, db=db_url)
         yield
+        await engine.dispose()  # закрыть все соединения пула, чтобы PostgreSQL не держал их зря
         log.info("app_stopped")
 
     docs_enabled = not settings.is_prod
@@ -47,6 +53,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
+    app.state.engine = engine
+    app.state.sessionmaker = create_sessionmaker(engine)
 
     # Порядок важен: middleware, добавленная последней, выполняется первой (оборачивает остальные).
     # RequestContextMiddleware — снаружи, чтобы request_id и лог были у любого ответа, включая CORS preflight.
