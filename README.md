@@ -3,15 +3,16 @@
 Бэкенд сервиса поиска виральных Reels: агент собирает видео из Instagram по нише клиента,
 считает процент виральности и объясняет через Claude, почему ролик «залетел» и как снять свой.
 
-**Статус:** этап 1 из 14 — каркас приложения. Готовы настройки, логирование, единый формат ошибок,
-Docker-стек и сбор логов в Grafana. Бизнес-модули (вход, квиз, потоки, оплата, лента видео) — следующие этапы.
+**Статус:** этап 2 из 14 — база данных и миграции. Готовы каркас (настройки, логи, ошибки, Docker, Grafana),
+PostgreSQL с миграциями Alembic, первые таблицы (пользователи и ниши) и тесты на настоящей базе.
+Бизнес-модули (вход, квиз, потоки, оплата, лента видео) — следующие этапы.
 
 ## Стек
 
 | Слой | Технологии |
 |---|---|
 | API | Python 3.12, FastAPI, Pydantic v2, pydantic-settings, Uvicorn |
-| Данные | PostgreSQL 16, Redis 7 (подключаются на этапах 2 и 8) |
+| Данные | PostgreSQL 16, SQLAlchemy 2 (async) + asyncpg, Alembic; Redis 7 (с этапа 8) |
 | Логи | structlog → Docker → Grafana Alloy → Loki → Grafana |
 | Тесты и качество | pytest, httpx, ruff |
 | Инфраструктура | Docker, docker compose, Makefile |
@@ -22,7 +23,8 @@ Docker-стек и сбор логов в Grafana. Бизнес-модули (в
 
 ```bash
 make setup   # окружение .venv, зависимости, .env с паролем Grafana
-make up      # весь стек в Docker
+make up      # весь стек в Docker; миграции применятся сами
+make seed    # стартовые ниши (один раз)
 ```
 
 | Что | Адрес |
@@ -42,11 +44,11 @@ make up      # весь стек в Docker
 | Команда | Что делает |
 |---|---|
 | `make run` | API локально, без Docker, с автоперезагрузкой |
-| `make test` | Тесты |
+| `make test` / `make test-fast` | Все тесты (нужен `make up`) / только тесты без базы |
 | `make lint` / `make format` | Проверить / исправить код через ruff |
 | `make check` | Линтер и тесты — **перед каждым коммитом** |
 | `make up` / `make down` | Поднять / остановить Docker-стек |
-| `make rebuild` | Пересобрать и перезапустить только API |
+| `make rebuild` | Пересобрать и перезапустить API (сначала применятся новые миграции) |
 | `make ps` / `make logs` | Статус контейнеров / логи API (`make logs s=alloy` — другого сервиса) |
 | `make docs` / `make grafana` | Открыть документацию / дашборд в браузере |
 | `make migration m="..."` | Создать миграцию из изменений моделей (номер `0002`, `0003`… ставится сам) |
@@ -61,13 +63,21 @@ make up      # весь стек в Docker
 
 ```
 app/
-├── main.py              create_app(): настройки → логи → FastAPI → CORS → middleware → ошибки → /health
+├── main.py              create_app(): настройки → логи → база → FastAPI → CORS → middleware → ошибки → /health
+├── models.py            реестр всех моделей для Alembic — новую модель импортируйте сюда
 ├── core/
 │   ├── config.py        настройки из переменных окружения VS_* и .env
+│   ├── db.py            Base, движок, SessionDep, медленные SQL в лог
+│   ├── health.py        /health и /health/ready
 │   ├── logging.py       structlog: JSON или цветной вывод, контекст запроса, маскировка секретов
 │   ├── errors.py        AppError и единый формат ошибок 404/405/409/422/500
 │   └── middleware.py    request_id, X-Process-Time, лог request_finished
-└── modules/             бизнес-модули (с этапа 3)
+├── modules/
+│   ├── users/models.py  User
+│   └── niches/          Niche, NicheQuery, UserNiche; seed.py — стартовые ниши
+└── scripts/seed.py      make seed
+migrations/              Alembic: env.py, шаблон, versions/0001_users_and_niches.py
+alembic.ini
 tests/                   pytest: настройки, логи, ошибки, /health, middleware, модели и миграции на PostgreSQL
 observability/
 ├── alloy/config.alloy   сбор логов контейнеров проекта → Loki
@@ -85,8 +95,55 @@ observability/
 | `VS_LOG_JSON` | — | Пусто: JSON везде, кроме `dev`. `true` / `false` — принудительно |
 | `VS_CORS_ORIGINS` | `["http://localhost:3000"]` | Сайты, которым можно ходить в API из браузера (JSON-список) |
 | `VS_DATABASE_URL`, `VS_REDIS_URL` | localhost | Адреса для локального запуска. В Docker подставляются автоматически |
+| `VS_DB_POOL_SIZE`, `VS_DB_MAX_OVERFLOW`, `VS_DB_POOL_TIMEOUT` | 5, 10, 30 | Пул соединений с базой |
+| `VS_DB_ECHO` | `false` | Печатать каждый SQL-запрос — только для отладки |
+| `VS_DB_HEALTH_TIMEOUT` | 2 | Секунд на проверку базы в `/health/ready` |
+| `VS_DB_SLOW_QUERY_MS` | 200 | SQL дольше — в лог как `slow_query`; `0` — выключить |
+| `VS_TEST_DATABASE_URL`, `VS_TEST_REQUIRE_DB` | — | Своя база для тестов / падать, а не пропускать тесты без PostgreSQL |
 | `GRAFANA_ADMIN_PASSWORD` | — | **Обязателен** для `make up`. `make env` генерирует его сам |
 | `API_PORT`, `POSTGRES_PORT`, `REDIS_PORT`, `GRAFANA_PORT`, `ALLOY_PORT` | 8000, 5432, 6379, 3001, 12345 | Порты на вашем компьютере. Поменяйте, если порт занят другим проектом |
+
+## База данных и миграции
+
+PostgreSQL 16 в Docker, SQLAlchemy 2 в асинхронном режиме, миграции — Alembic.
+
+**Как устроено**
+
+- Модели лежат в модулях: `app/modules/<модуль>/models.py`. Все наследуются от `Base` из `app/core/db.py` —
+  у неё правила имён ограничений (`pk_users`, `uq_users_email`, `fk_user_niches_user_id_users`).
+- Первичный ключ — `id: Mapped[IntPK]` (BIGINT, автоинкремент). Время — `CreatedAtMixin` / `TimestampMixin`:
+  `created_at` и `updated_at` с часовым поясом, значения ставит база.
+- В обработчике сессия берётся из зависимости: `async def handler(session: SessionDep)`. Своя на каждый запрос.
+- **Изменения сохраняются только после `await session.commit()`.** Без commit или при ошибке всё откатится.
+- Связи — с `lazy="raise"`: подгружайте их явно, `select(Niche).options(selectinload(Niche.queries))`.
+  Обращение к незагруженной связи — понятная ошибка, а не скрытый запрос в базу.
+- Правила данных проверяет сама база: уникальность, `CHECK`, каскадное удаление. Ошибка в коде не испортит данные.
+
+**Порядок запуска в Docker:** `postgres` → `migrate` (`alembic upgrade head`, затем завершается) → `api`.
+Миграция упала — API не стартует: новый код не работает со старой схемой.
+
+**Как изменить схему**
+
+1. Поменяйте модель. Новую модель импортируйте в `app/models.py` — иначе Alembic её не увидит.
+2. `make migration m="add login codes"` — файл `migrations/versions/0002_add_login_codes.py`.
+3. **Прочитайте файл.** Autogenerate ошибается: переименование колонки видит как «удалить + создать»
+   (данные пропадут), может задвоить `CHECK`. Поправьте руками.
+4. `make migrate` — применить, `make downgrade` — откатить и попробовать снова.
+5. `make test` — тесты проверят, что миграции применяются, откатываются и совпадают с моделями.
+
+**Таблицы сейчас**
+
+| Таблица | Что хранит |
+|---|---|
+| `users` | Клиенты. Вход по почте или Telegram — одно из двух обязательно, почта в нижнем регистре |
+| `niches` | Ниши для квиза и сбора видео |
+| `niche_queries` | Хештеги и аккаунты, по которым собираются видео ниши (`kind`: `hashtag` / `account`) |
+| `user_niches` | Какие ниши выбрал клиент и его уточнение своими словами |
+
+Остальные таблицы добавляются на своих этапах: коды входа (3), квиз (4), потоки (5), оплата (6), видео (7–9).
+
+**Медленные запросы.** SQL дольше 200 мс пишется в лог как `slow_query` — с текстом запроса и `request_id`,
+но без значений параметров. На дашборде API overview — панели «Медленные запросы к базе».
 
 ## Ошибки API
 
@@ -149,8 +206,8 @@ make test-fast  # только тесты без базы — Docker не нуж
 
 ## План разработки
 
-1. **Каркас: настройки, логи, ошибки, Docker, Grafana** ← сейчас
-2. База данных и миграции (SQLAlchemy 2, Alembic)
+1. Каркас: настройки, логи, ошибки, Docker, Grafana ✓
+2. **База данных и миграции (SQLAlchemy 2, Alembic)** ✓ ← сейчас
 3. Вход: код на почту, Telegram, роли
 4. Квиз и ниши
 5. Потоки и лист ожидания
@@ -172,5 +229,8 @@ make test-fast  # только тесты без базы — Docker не нуж
 | `make up`: «задайте GRAFANA_ADMIN_PASSWORD» | `make env` |
 | `make up`: `service "migrate" didn't complete successfully` | Миграция упала, API не запущен: причина в `make logs s=migrate` |
 | Порт уже занят | Поменяйте `*_PORT` в `.env` (и `VS_REDIS_URL` / `VS_DATABASE_URL` для локального запуска) |
+| `Target database is not up to date` при `make migration` | Сначала `make migrate`, затем снова `make migration` |
+| Тесты базы пропущены (`skipped`) | PostgreSQL не запущен: `make up` |
+| `InvalidRequestError: ... lazy='raise'` | Связь не загружена: добавьте `.options(selectinload(...))` в запрос |
 | Логи не видны в Grafana | Подождите 5–10 секунд; проверьте `make logs s=alloy` и http://localhost:12345 |
 | Сменили пароль Grafana в `.env`, а он не подходит | Пароль задаётся при первом запуске: смените в профиле Grafana или `make reset-data` |
