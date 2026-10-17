@@ -7,16 +7,24 @@
 -include .env
 API_PORT ?= 8000
 GRAFANA_PORT ?= 3001
+POSTGRES_USER ?= viralscope
+POSTGRES_DB ?= viralscope
 
 PYTHON ?= python3.12
 VENV := .venv
 BIN := $(VENV)/bin
 COMPOSE := docker compose
+ALEMBIC := $(BIN)/alembic
 s ?= api
+n ?= 1
+
+# Номер следующей миграции: 0001, 0002, ... — по самому большому номеру в migrations/versions.
+# Через «=», а не «:=»: считается только когда нужен (в make migration), а не при каждом вызове make.
+NEXT_REV = $(shell $(BIN)/python -c "import pathlib, re; nums = [int(m.group()) for p in pathlib.Path('migrations/versions').glob('*.py') if (m := re.match(r'[0-9]+', p.name))]; print(f'{max(nums, default=0) + 1:04d}')")
 
 .DEFAULT_GOAL := help
 .PHONY: help setup venv install env run test cov lint format check up down restart rebuild ps logs \
-	docs grafana clean reset-data
+	docs grafana migrate migration downgrade db-status history sql db clean reset-data
 
 help: ## Показать этот список
 	@echo "Команды ViralScope backend:"
@@ -88,6 +96,49 @@ docs: ## Открыть документацию API в браузере
 
 grafana: ## Открыть дашборд API overview в Grafana
 	open http://localhost:$(GRAFANA_PORT)/d/api-overview
+
+# ---------- База данных и миграции ----------
+# Команды работают с базой из VS_DATABASE_URL (.env) — по умолчанию PostgreSQL из docker compose.
+# Сначала поднимите её: make up.
+
+migrate: ## Применить все новые миграции к базе
+	$(ALEMBIC) upgrade head
+
+migration: ## Создать миграцию из изменений моделей: make migration m="add login codes"
+	@test -n "$(m)" || { echo 'Укажите описание: make migration m="add login codes"'; exit 1; }
+	@if [ -z "$(empty)" ] && $(ALEMBIC) check >/dev/null 2>&1; then \
+		echo "Модели и база совпадают — генерировать нечего."; \
+		echo 'Пустая миграция (например, для переноса данных): make migration m="..." empty=1'; \
+		exit 1; \
+	fi
+	$(ALEMBIC) revision $(if $(empty),,--autogenerate) -m "$(m)" --rev-id $(NEXT_REV)
+	@echo ""
+	@echo "Готово. Дальше:"
+	@echo "  1. Прочитайте файл в migrations/versions/ — autogenerate ошибается (переименования, лишние CHECK)"
+	@echo "  2. make migrate — применить;  make downgrade — откатить, если что-то не так"
+
+downgrade: ## Откатить последнюю миграцию (make downgrade n=2 — две). Данные в удаляемых таблицах пропадут
+	@echo "Текущая версия базы:"; $(ALEMBIC) current 2>/dev/null
+	@read -p "Откатить миграций: $(n). Продолжить? [y/N] " answer; \
+	if [ "$$answer" = "y" ]; then $(ALEMBIC) downgrade -$(n); else echo "Отменено."; fi
+
+db-status: ## Версия базы и есть ли изменения моделей без миграции
+	@echo "Версия базы:"; $(ALEMBIC) current 2>/dev/null
+	@$(ALEMBIC) check >/dev/null 2>&1 \
+		&& echo "Модели и база совпадают." \
+		|| echo "Есть изменения моделей без миграции (или база недоступна): make migration m=\"...\""
+
+history: ## Список миграций
+	$(ALEMBIC) history --indicate-current
+
+sql: ## Показать SQL новых миграций, не применяя их (для проверки перед продакшеном)
+	@current=$$($(ALEMBIC) current 2>/dev/null | grep -oE '^[0-9a-z]+' || echo base); \
+	head=$$($(ALEMBIC) heads 2>/dev/null | grep -oE '^[0-9a-z]+'); \
+	if [ "$$current" = "$$head" ]; then echo "Новых миграций нет: база уже на $$current (head)."; \
+	else $(ALEMBIC) upgrade $$current:head --sql; fi
+
+db: ## Открыть консоль PostgreSQL (psql) в контейнере. Выход: \q
+	$(COMPOSE) exec postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
 
 # ---------- Уборка ----------
 

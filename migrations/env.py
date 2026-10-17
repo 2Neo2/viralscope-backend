@@ -44,6 +44,15 @@ target_metadata = Base.metadata
 log = get_logger("migrations")
 
 
+def changes_schema() -> bool:
+    """Команда меняет схему (upgrade/downgrade), а не только читает (current, history, check).
+
+    Из кода (тесты) cmd_opts нет — считаем, что меняет.
+    """
+    cmd = getattr(config.cmd_opts, "cmd", None)
+    return cmd is None or cmd[0].__name__ in {"upgrade", "downgrade", "stamp"}
+
+
 def database_url() -> str:
     return config.attributes.get("database_url") or settings.database_url
 
@@ -69,7 +78,8 @@ def do_run_migrations(connection: Connection) -> None:
     with context.begin_transaction():
         context.run_migrations()
     # Итог одной строкой — видно в Grafana, даже если применять было нечего
-    log.info("migrations_finished", revision=context.get_context().get_current_revision())
+    if changes_schema():
+        log.info("migrations_finished", revision=context.get_context().get_current_revision())
 
 
 async def run_async_migrations() -> None:
