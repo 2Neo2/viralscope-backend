@@ -7,7 +7,7 @@
 
 import enum
 
-from sqlalchemy import Enum, ForeignKey, String, UniqueConstraint, true
+from sqlalchemy import CheckConstraint, Enum, ForeignKey, String, UniqueConstraint, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base, CreatedAtMixin, IntPK, TimestampMixin
@@ -42,7 +42,12 @@ class NicheQuery(CreatedAtMixin, Base):
     """Поисковое задание ниши: хештег или аккаунт, по которому собираем Reels (этап 7)."""
 
     __tablename__ = "niche_queries"
-    __table_args__ = (UniqueConstraint("niche_id", "kind", "value"),)  # один хештег в нише — один раз
+    __table_args__ = (
+        UniqueConstraint("niche_id", "kind", "value"),  # один хештег в нише — один раз
+        # Проверку значений kind пишем сами, а не через Enum(create_constraint=True):
+        # с правилами имён autogenerate создавал бы ДВЕ одинаковые проверки — kind и ck_niche_queries_kind
+        CheckConstraint(f"kind IN ({', '.join(repr(kind.value) for kind in QueryKind)})", name="kind"),
+    )
 
     id: Mapped[IntPK]
     # Без отдельного индекса: UNIQUE (niche_id, kind, value) уже ускоряет поиск по niche_id —
@@ -53,9 +58,8 @@ class NicheQuery(CreatedAtMixin, Base):
     kind: Mapped[QueryKind] = mapped_column(
         Enum(
             QueryKind,
-            name="kind",
             native_enum=False,
-            create_constraint=True,
+            create_constraint=False,  # проверка — в __table_args__
             length=16,
             values_callable=lambda kinds: [kind.value for kind in kinds],  # в базе "hashtag", а не "HASHTAG"
         )
