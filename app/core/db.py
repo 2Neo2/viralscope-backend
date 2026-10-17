@@ -9,16 +9,21 @@
 случилась ошибка, при закрытии сессии изменения откатываются — в базу не попадёт половина операции.
 """
 
+import re
+import time
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, Request
-from sqlalchemy import BigInteger, DateTime, Identity, MetaData, func
+from sqlalchemy import BigInteger, DateTime, Identity, MetaData, event, func
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.core.config import Settings
+from app.core.logging import get_logger
+
+log = get_logger(__name__)
 
 # Правила имён для индексов и ограничений. Без них PostgreSQL придумывает имена сам,
 # и Alembic не может надёжно их найти, чтобы изменить или удалить в следующей миграции.
@@ -69,7 +74,7 @@ class TimestampMixin(CreatedAtMixin):
 
 def create_engine(settings: Settings) -> AsyncEngine:
     """Пул соединений. Соединения открываются лениво — при первом запросе, а не здесь."""
-    return create_async_engine(
+    engine = create_async_engine(
         settings.database_url,
         echo=settings.db_echo,
         pool_size=settings.db_pool_size,
@@ -80,6 +85,47 @@ def create_engine(settings: Settings) -> AsyncEngine:
         # Имя приложения видно в pg_stat_activity: понятно, кто держит соединения — api или worker
         connect_args={"server_settings": {"application_name": f"viralscope-{settings.service}"}},
     )
+    if settings.db_slow_query_ms > 0:
+        log_slow_queries(engine, settings.db_slow_query_ms)
+    return engine
+
+
+SLOW_QUERY_MAX_CHARS = 1000
+_WHITESPACE = re.compile(r"\s+")
+
+
+def log_slow_queries(engine: AsyncEngine, threshold_ms: int) -> None:
+    """Писать в лог SQL-запросы дольше threshold_ms — событие slow_query (уровень warning).
+
+    В лог идёт текст запроса с плейсхолдерами ($1, $2), но НЕ значения параметров:
+    в них бывают почта, токены и другие личные данные.
+    request_id подставляется сам (contextvars) — по нему видно, какой запрос API тормозил.
+    """
+    # События SQLAlchemy синхронные — вешаем их на sync_engine внутри AsyncEngine
+    sync_engine = engine.sync_engine
+
+    @event.listens_for(sync_engine, "before_cursor_execute")
+    def start_timer(conn: Any, cursor: Any, statement: str, parameters: Any, context: Any, executemany: bool):
+        conn.info.setdefault("query_started", []).append(time.perf_counter())
+
+    @event.listens_for(sync_engine, "after_cursor_execute")
+    def stop_timer(conn: Any, cursor: Any, statement: str, parameters: Any, context: Any, executemany: bool):
+        duration_ms = (time.perf_counter() - conn.info["query_started"].pop()) * 1000
+        if duration_ms < threshold_ms:
+            return
+        log.warning(
+            "slow_query",
+            duration_ms=round(duration_ms, 1),
+            threshold_ms=threshold_ms,
+            statement=_WHITESPACE.sub(" ", statement).strip()[:SLOW_QUERY_MAX_CHARS],
+            rows=cursor.rowcount if cursor.rowcount >= 0 else None,
+        )
+
+    @event.listens_for(sync_engine, "handle_error")
+    def drop_timer(context: Any) -> None:
+        # Запрос упал — after_cursor_execute не вызовется, убираем его отметку времени
+        if context.connection is not None and context.connection.info.get("query_started"):
+            context.connection.info["query_started"].pop()
 
 
 def create_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:

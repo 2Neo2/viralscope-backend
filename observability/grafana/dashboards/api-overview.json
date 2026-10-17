@@ -1,7 +1,7 @@
 {
   "uid": "api-overview",
   "title": "API overview",
-  "description": "Состояние API ViralScope по логам из Loki: нагрузка, ошибки, медленные маршруты, поиск по request_id.",
+  "description": "Состояние API ViralScope по логам из Loki: нагрузка, ошибки, медленные маршруты и SQL, поиск по request_id.",
   "tags": [
     "viralscope",
     "api",
@@ -726,6 +726,199 @@
         "enableLogDetails": true,
         "dedupStrategy": "none",
         "prettifyLogMessage": true
+      }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Медленные запросы к базе",
+      "description": "SQL-запросы дольше VS_DB_SLOW_QUERY_MS (200 мс) за период: сколько раз, среднее и максимум. Значения параметров в лог не попадают — только текст запроса с $1, $2.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 41
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (statement) (count_over_time({service=~\"api|migrate|worker|beat\"} | json | event=\"slow_query\" [$__range]))",
+          "legendFormat": "",
+          "queryType": "instant",
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "avg by (statement) (avg_over_time({service=~\"api|migrate|worker|beat\"} | json | event=\"slow_query\" | unwrap duration_ms | __error__=\"\" [$__range]))",
+          "legendFormat": "",
+          "queryType": "instant",
+          "editorMode": "code"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "max by (statement) (max_over_time({service=~\"api|migrate|worker|beat\"} | json | event=\"slow_query\" | unwrap duration_ms | __error__=\"\" [$__range]))",
+          "legendFormat": "",
+          "queryType": "instant",
+          "editorMode": "code"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "statement": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3
+            },
+            "renameByName": {
+              "statement": "Запрос",
+              "Value #A": "Раз",
+              "Value #B": "Среднее, мс",
+              "Value #C": "Максимум, мс"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Раз",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Запрос"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 900
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto",
+                  "wrapText": true
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Среднее, мс|Максимум, мс"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "orange",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1000
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "type": "logs",
+      "title": "Медленные запросы к базе: последние",
+      "description": "Каждый медленный запрос с request_id — вставьте его в поле наверху, чтобы увидеть весь запрос API, в котором он выполнялся.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 50
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{service=~\"api|migrate|worker|beat\"} | json | event=\"slow_query\" | line_format \"{{.duration_ms}} мс  {{.statement}}  request_id={{.request_id}}\"",
+          "legendFormat": "",
+          "queryType": "range",
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "prettifyLogMessage": false
       }
     }
   ]

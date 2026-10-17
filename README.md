@@ -125,6 +125,7 @@ observability/
 | Ошибки и предупреждения | `{service="api", level=~"warning\|error"}` |
 | Один запрос по id | `{service="api"} \| json \| request_id="..."` |
 | Медленные запросы | `{service="api"} \| json \| event="request_finished" \| duration_ms > 500` |
+| Медленные SQL-запросы (дольше `VS_DB_SLOW_QUERY_MS`, 200 мс) | `{service="api"} \| json \| event="slow_query"` |
 | Запросы по статусам за час | `sum by (status) (count_over_time({service="api"} \| json \| event="request_finished" [1h]))` |
 
 Метки в Loki — только `service`, `container`, `env`, `level`. `request_id`, `path`, `user_id` — поля JSON,
