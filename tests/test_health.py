@@ -129,3 +129,9 @@ def test_ready_503_when_database_hangs():
 def test_ready_documented_with_503(client):
     responses = client.get("/openapi.json").json()["paths"]["/health/ready"]["get"]["responses"]
     assert {"200", "503"} <= responses.keys()
+
+
+async def test_ready_ok_with_real_database(db_client):
+    response = await db_client.get("/health/ready")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "checks": {"database": "ok"}}

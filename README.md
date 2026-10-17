@@ -67,7 +67,7 @@ app/
 │   ├── errors.py        AppError и единый формат ошибок 404/405/409/422/500
 │   └── middleware.py    request_id, X-Process-Time, лог request_finished
 └── modules/             бизнес-модули (с этапа 3)
-tests/                   pytest: настройки, логи, ошибки, /health, middleware
+tests/                   pytest: настройки, логи, ошибки, /health, middleware, модели и миграции на PostgreSQL
 observability/
 ├── alloy/config.alloy   сбор логов контейнеров проекта → Loki
 └── grafana/             источник Loki и дашборд API overview (подключаются автоматически)
@@ -132,10 +132,18 @@ observability/
 ## Тесты
 
 ```bash
-make test    # или make check — вместе с линтером
+make up         # PostgreSQL для тестов базы
+make test       # все тесты (make check — вместе с линтером)
+make test-fast  # только тесты без базы — Docker не нужен
 ```
 
-Тесты не зависят от вашего `.env` (`VS_ENV=test` задаётся в `tests/conftest.py`) и не требуют Docker.
+- Тесты базы работают с **настоящим PostgreSQL** в отдельной базе `viralscope_test`, ваша база `viralscope` не трогается.
+  При каждом запуске `viralscope_test` пересоздаётся, и к ней применяются миграции.
+- Каждый тест — в транзакции, которая откатывается в конце: тесты не видят данных друг друга.
+- Миграции проверяются отдельно: применяются, откатываются по одной и совпадают с моделями
+  (`tests/test_migrations.py`). Забыли `make migration` после изменения модели — тест упадёт.
+- PostgreSQL не запущен — тесты базы пропускаются с подсказкой `make up`. `VS_TEST_REQUIRE_DB=1` — падать вместо пропуска (для CI).
+- Остальные тесты не зависят от вашего `.env` (`VS_ENV=test` задаётся в `tests/conftest.py`).
 
 ## План разработки
 

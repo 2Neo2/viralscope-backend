@@ -24,7 +24,7 @@ NEXT_REV = $(shell $(BIN)/python -c "import pathlib, re; nums = [int(m.group()) 
 
 .DEFAULT_GOAL := help
 .PHONY: help setup venv install env run test cov lint format check up down restart rebuild ps logs \
-	docs grafana migrate migration downgrade db-status history sql db clean reset-data
+	test-fast docs grafana migrate migration downgrade db-status history sql db clean reset-data
 
 help: ## Показать этот список
 	@echo "Команды ViralScope backend:"
@@ -55,8 +55,11 @@ env: ## Создать .env из шаблона и сгенерировать п
 run: ## Запустить API локально с автоперезагрузкой
 	$(BIN)/uvicorn app.main:app --reload --port $(API_PORT)
 
-test: ## Запустить тесты
+test: ## Все тесты. Тесты базы идут в отдельную viralscope_test — нужен make up, иначе они пропускаются
 	$(BIN)/pytest -q
+
+test-fast: ## Тесты без базы данных — не нужен Docker
+	$(BIN)/pytest -q -m "not db"
 
 lint: ## Проверить код: ruff (ошибки и стиль) + формат
 	$(BIN)/ruff check .

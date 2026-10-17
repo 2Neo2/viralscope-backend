@@ -8,7 +8,7 @@ from datetime import UTC
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import Column, ForeignKey, Integer, MetaData, String, Table, UniqueConstraint
+from sqlalchemy import Column, ForeignKey, Integer, MetaData, String, Table, UniqueConstraint, func, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from sqlalchemy.schema import CreateIndex, CreateTable
@@ -16,6 +16,7 @@ from structlog.testing import capture_logs
 
 from app.core.db import NAMING_CONVENTION, Base, SessionDep, create_engine, utcnow
 from app.main import create_app
+from app.modules.users.models import User
 from tests.conftest import make_settings
 
 
@@ -108,3 +109,18 @@ def test_lifespan_logs_db_without_password_and_disposes_pool(monkeypatch):
     assert started["db"] == "postgresql+asyncpg://u:***@db.example:5432/vs"
     assert "secret" not in str(logs)
     assert disposed == [app.state.engine]
+
+
+async def test_session_dep_works_with_real_database(db_app, db_client, db_session):
+    """Запрос через SessionDep пишет в базу. commit() в обработчике виден тесту и откатится после него."""
+
+    @db_app.post("/users-probe")
+    async def create_user(session: SessionDep) -> dict:
+        user = User(email="probe@test.ru")
+        session.add(user)
+        await session.commit()
+        return {"id": user.id}
+
+    response = await db_client.post("/users-probe")
+    assert response.status_code == 200
+    assert await db_session.scalar(select(func.count()).select_from(User)) == 1
