@@ -24,7 +24,7 @@ NEXT_REV = $(shell $(BIN)/python -c "import pathlib, re; nums = [int(m.group()) 
 
 .DEFAULT_GOAL := help
 .PHONY: help setup venv install env run test cov lint format check up down restart rebuild ps logs \
-	test-fast docs grafana migrate migration downgrade db-status history sql db clean reset-data
+	test-fast docs grafana migrate migration downgrade db-status history sql seed db clean reset-data
 
 help: ## Показать этот список
 	@echo "Команды ViralScope backend:"
@@ -139,6 +139,9 @@ sql: ## Показать SQL новых миграций, не применяя 
 	head=$$($(ALEMBIC) heads 2>/dev/null | grep -oE '^[0-9a-z]+'); \
 	if [ "$$current" = "$$head" ]; then echo "Новых миграций нет: база уже на $$current (head)."; \
 	else $(ALEMBIC) upgrade $$current:head --sql; fi
+
+seed: ## Заполнить базу стартовыми нишами и хештегами (повторный запуск ничего не дублирует)
+	$(BIN)/python -m app.scripts.seed
 
 db: ## Открыть консоль PostgreSQL (psql) в контейнере. Выход: \q
 	$(COMPOSE) exec postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
