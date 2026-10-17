@@ -1,4 +1,4 @@
-# В образ попадает только то, что нужно для запуска: pyproject.toml и папка app.
+# В образ попадает только то, что нужно для запуска: pyproject.toml, app, alembic.ini и migrations.
 .git
 .github
 .venv

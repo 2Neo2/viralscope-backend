@@ -63,7 +63,7 @@ check: ## Всё перед коммитом: линтер и тесты
 
 # ---------- Docker ----------
 
-up: ## Поднять весь стек в фоне (api, postgres, redis, loki, alloy, grafana)
+up: ## Поднять весь стек в фоне (миграции применятся сами перед стартом api)
 	$(COMPOSE) up --build -d
 	@echo "API:     http://localhost:$(API_PORT)/docs"
 	@echo "Grafana: http://localhost:$(GRAFANA_PORT)/d/api-overview  (admin / пароль из .env)"
@@ -74,7 +74,7 @@ down: ## Остановить стек (данные сохраняются)
 restart: ## Перезапустить сервисы
 	$(COMPOSE) restart
 
-rebuild: ## Пересобрать и перезапустить только api
+rebuild: ## Пересобрать и перезапустить api (сначала применятся новые миграции)
 	$(COMPOSE) up --build -d api
 
 ps: ## Статус контейнеров

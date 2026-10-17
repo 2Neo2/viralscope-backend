@@ -1,6 +1,7 @@
 # Весь стек для разработки одной командой:
 #   cp .env.example .env      (один раз, затем задайте GRAFANA_ADMIN_PASSWORD)
 #   docker compose up --build
+# Порядок запуска: postgres → migrate (применяет миграции и завершается) → api.
 # API:     http://localhost:8000/docs
 # Grafana: http://localhost:3001  (логин admin, пароль — GRAFANA_ADMIN_PASSWORD из .env)
 #
@@ -10,20 +11,40 @@
 # Постоянное имя проекта (а не имя папки): по нему Alloy находит наши контейнеры.
 name: viralscope
 
+# Общие настройки Python-сервисов (api, migrate, позже worker и beat): один образ, одни переменные.
+# <<: *app в сервисе подставляет этот блок, а сервис дописывает своё.
+x-app: &app
+  build: .
+  image: viralscope-backend:dev  # одно имя образа: собирается один раз, используется всеми сервисами
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    # Внутри Docker сервисы видят друг друга по имени: postgres и redis, а не localhost
+    VS_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-viralscope}:${POSTGRES_PASSWORD:-viralscope}@postgres:5432/${POSTGRES_DB:-viralscope}
+    VS_REDIS_URL: redis://redis:6379/0
+    VS_LOG_JSON: "true"  # в контейнере логи всегда в JSON — их соберёт Grafana Alloy
+
 services:
+  # Применяет миграции и завершается. API стартует только после успешного завершения:
+  # новый код никогда не работает со старой схемой базы. Ошибка миграции — API не запустится.
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      disable: true  # HEALTHCHECK образа проверяет HTTP API, а migrate не сервер
+    restart: "no"  # разовая задача: не перезапускать после завершения
+
   api:
-    build: .
-    env_file:
-      - path: .env
-        required: false
-    environment:
-      # Внутри Docker сервисы видят друг друга по имени: postgres и redis, а не localhost
-      VS_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-viralscope}:${POSTGRES_PASSWORD:-viralscope}@postgres:5432/${POSTGRES_DB:-viralscope}
-      VS_REDIS_URL: redis://redis:6379/0
-      VS_LOG_JSON: "true"  # в контейнере логи всегда в JSON — их соберёт Grafana Alloy (шаг 11)
+    <<: *app
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:

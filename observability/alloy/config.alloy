@@ -8,6 +8,10 @@
 // 1. Найти контейнеры. Только проекта viralscope — на компьютере могут быть контейнеры других проектов.
 discovery.docker "containers" {
   host = "unix:///var/run/docker.sock"
+  // Искать новые контейнеры каждые 5 секунд (по умолчанию — раз в минуту).
+  // Контейнер, проживший меньше 5 секунд, Alloy не успевает заметить: так бывает с migrate,
+  // когда применять нечего. Его логи — в `make logs s=migrate`. Долгие миграции попадают в Grafana.
+  refresh_interval = "5s"
 
   filter {
     name   = "label"
@@ -50,7 +54,7 @@ loki.source.docker "containers" {
 //    Логи postgres и redis не JSON — проходят как есть, только с меткой service.
 loki.process "app" {
   stage.match {
-    selector = "{service=~\"api|worker|beat\"}"
+    selector = "{service=~\"api|migrate|worker|beat\"}"
 
     stage.json {
       expressions = {

@@ -1,4 +1,4 @@
-# Образ API (позже из него же будут запускаться worker и beat — с другой командой).
+# Один образ на все процессы: api, migrate (миграции), позже worker и beat — отличается только команда.
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -15,8 +15,10 @@ RUN python -c "import tomllib; deps = tomllib.load(open('pyproject.toml', 'rb'))
     && pip install -r /tmp/requirements.txt \
     && rm /tmp/requirements.txt
 
-# 2. Потом код.
+# 2. Потом код и миграции.
 COPY app ./app
+COPY alembic.ini ./
+COPY migrations ./migrations
 
 # 3. Не запускаем приложение от root.
 RUN useradd --create-home --uid 1000 appuser

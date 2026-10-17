@@ -16,7 +16,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import get_settings
-from app.core.logging import setup_logging
+from app.core.logging import get_logger, setup_logging
 from app.models import Base
 
 config = context.config
@@ -41,6 +41,7 @@ if config.attributes.get("configure_logging", True) and not context.is_offline_m
         logging.getLogger(name).addFilter(DropAlembicChatter())
 
 target_metadata = Base.metadata
+log = get_logger("migrations")
 
 
 def database_url() -> str:
@@ -67,6 +68,8 @@ def do_run_migrations(connection: Connection) -> None:
     configure(connection=connection)
     with context.begin_transaction():
         context.run_migrations()
+    # Итог одной строкой — видно в Grafana, даже если применять было нечего
+    log.info("migrations_finished", revision=context.get_context().get_current_revision())
 
 
 async def run_async_migrations() -> None:

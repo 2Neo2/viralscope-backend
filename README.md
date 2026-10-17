@@ -155,6 +155,7 @@ make test    # или make check — вместе с линтером
 |---|---|
 | `No module named 'app'` | `make install` |
 | `make up`: «задайте GRAFANA_ADMIN_PASSWORD» | `make env` |
+| `make up`: `service "migrate" didn't complete successfully` | Миграция упала, API не запущен: причина в `make logs s=migrate` |
 | Порт уже занят | Поменяйте `*_PORT` в `.env` (и `VS_REDIS_URL` / `VS_DATABASE_URL` для локального запуска) |
 | Логи не видны в Grafana | Подождите 5–10 секунд; проверьте `make logs s=alloy` и http://localhost:12345 |
 | Сменили пароль Grafana в `.env`, а он не подходит | Пароль задаётся при первом запуске: смените в профиле Grafana или `make reset-data` |
