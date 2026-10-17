@@ -24,7 +24,7 @@ NEXT_REV = $(shell $(BIN)/python -c "import pathlib, re; nums = [int(m.group()) 
 
 .DEFAULT_GOAL := help
 .PHONY: help setup venv install env run test cov lint format check up down restart rebuild ps logs \
-	test-fast docs grafana migrate migration downgrade db-status history sql seed db clean reset-data
+	test-fast docs dashboard grafana migrate migration downgrade db-status history sql seed db clean reset-data
 
 help: ## Показать этот список
 	@echo "Команды ViralScope backend:"
@@ -96,6 +96,9 @@ logs: ## Логи сервиса в реальном времени: make logs s
 
 docs: ## Открыть документацию API в браузере
 	open http://localhost:$(API_PORT)/docs
+
+dashboard: ## Пересобрать JSON дашборда из observability/grafana/build_dashboard.py
+	python3 observability/grafana/build_dashboard.py
 
 grafana: ## Открыть дашборд API overview в Grafana
 	open http://localhost:$(GRAFANA_PORT)/d/api-overview

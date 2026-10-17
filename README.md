@@ -51,6 +51,7 @@ make seed    # стартовые ниши (один раз)
 | `make rebuild` | Пересобрать и перезапустить API (сначала применятся новые миграции) |
 | `make ps` / `make logs` | Статус контейнеров / логи API (`make logs s=alloy` — другого сервиса) |
 | `make docs` / `make grafana` | Открыть документацию / дашборд в браузере |
+| `make dashboard` | Пересобрать JSON дашборда из `observability/grafana/build_dashboard.py` |
 | `make migration m="..."` | Создать миграцию из изменений моделей (номер `0002`, `0003`… ставится сам) |
 | `make migrate` / `make downgrade` | Применить новые миграции / откатить последнюю (`n=2` — две) |
 | `make db-status` / `make history` | Версия базы и есть ли изменения без миграции / список миграций |
@@ -81,7 +82,8 @@ alembic.ini
 tests/                   pytest: настройки, логи, ошибки, /health, middleware, модели и миграции на PostgreSQL
 observability/
 ├── alloy/config.alloy   сбор логов контейнеров проекта → Loki
-└── grafana/             источник Loki и дашборд API overview (подключаются автоматически)
+└── grafana/             источник Loki и дашборд API overview (подключаются автоматически);
+                         build_dashboard.py — дашборд кодом, make dashboard пересобирает JSON
 ```
 
 ## Настройки
